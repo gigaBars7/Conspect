@@ -1,2 +1,13 @@
 experiments/*
+!experiments/**/
 !experiments/**/*.ipynb
+experiments/**/.ipynb_checkpoints/
+
+experiments/**/runs/
+experiments/**/tests/
+
+experiments/**/*.pt
+experiments/**/*.png
+experiments/**/*.jpg
+experiments/**/*.jpeg
+experiments/**/*.Identifier
