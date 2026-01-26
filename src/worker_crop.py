@@ -16,7 +16,7 @@ class CropWorker(BaseWorker):
         x2 = x1 + cw
         y2 = y1 + ch
         crop = img[y1:y2, x1:x2]
-        return crop, [x1, y1, x2, y2]
+        return crop
 
 
     def handle(self, op, payload):
