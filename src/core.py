@@ -23,7 +23,7 @@ def reader(proc: subprocess.Popen):
 
 def main():
     proc = subprocess.Popen(
-        [sys.executable, "worker_echo.py"],
+        [sys.executable, "worker_crop.py"],
         stdin=subprocess.PIPE,
         stdout=subprocess.PIPE,
         stderr=subprocess.PIPE,
