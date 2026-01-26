@@ -7,7 +7,7 @@ from pathlib import Path
 
 
 def send(proc: subprocess.Popen, obj: dict):
-    proc.stdin.write(json.dumps(obj, ensure_ascii=False) + "\n")
+    proc.stdin.write(json.dumps(obj, ensure_ascii=False, default=str) + "\n")
     proc.stdin.flush()
 
 
