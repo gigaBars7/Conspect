@@ -35,9 +35,13 @@ def main():
 
     time.sleep(0.2)  # дать воркеру успеть написать started
 
-    send(proc, {"id": "1", "op": "do", "payload": {"x": 1}})
-    time.sleep(0.5)
-    send(proc, {"id": "2", "op": "do", "payload": {"x": 2}})
+    in_img = r"C:\Users\alexa\Downloads\photo_2025-10-27_12-58-17.jpg"
+    out_dir = Path("test/crop")
+    out_dir.mkdir(parents=True, exist_ok=True)
+    out_img = str(out_dir / "crop.jpg")
+
+    send(proc, {"id": "1", "op": "do", "payload": {"image_path": in_img, "out_path": out_img}})
+
     time.sleep(5.0)
 
     send(proc, {"id": "3", "op": "ext"})
