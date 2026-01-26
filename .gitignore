@@ -6,6 +6,7 @@ experiments/**/.ipynb_checkpoints/
 src/.idea/*
 src/__pychache__/
 src/test/*
+src/cache/*
 
 experiments/**/runs/
 experiments/**/tests/
