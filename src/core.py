@@ -47,22 +47,29 @@ def cache_make_root_dir(cache_dir):
     cache_dir.mkdir(parents=True, exist_ok=True)
     return cache_dir
 
+def cache_make_image_dir(cache_dir, img_name):
+    cache_img_dir = cache_dir / img_name
+    cache_img_dir.mkdir(parents=True, exist_ok=True)
+    return cache_img_dir
+
 
 def main():
+    id = 1
     proc, _t = init_worker("worker_crop.py")
 
     cache_dir = cache_make_root_dir('cache')
 
-    in_img = r"test/photo_2025-10-27_12-58-17.jpg"
-    out_dir = cache_dir / 'crop'
-    out_dir.mkdir(parents=True, exist_ok=True)
-    out_img = str(out_dir / "crop.jpg")
+    test_img = Path("test/photo_2025-10-27_12-58-17.jpg")
+    test_img_dir = cache_make_image_dir(cache_dir, test_img.stem)
+    out_img = test_img_dir / f'crop_{test_img.name}'
 
-    send(proc, {"id": "1", "op": "do", "payload": {"image_path": in_img, "out_path": out_img}})
+    send(proc, {"id": id, "op": "do", "payload": {"image_path": test_img, "out_path": out_img}})
+    id += 1
 
     time.sleep(5.0)
 
-    send(proc, {"id": "3", "op": "ext"})
+    send(proc, {"id": id, "op": "ext"})
+    id += 1
     rc = proc.wait(timeout=5)
     print("worker exit code:", rc)
 
