@@ -29,7 +29,7 @@ def init_worker(worker_script):
         [sys.executable, worker_script],
         stdin=subprocess.PIPE,
         stdout=subprocess.PIPE,
-        stderr=subprocess.PIPE,
+        stderr=subprocess.STDOUT,
         text=True,
         bufsize=1,
     )
