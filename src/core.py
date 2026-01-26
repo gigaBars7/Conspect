@@ -5,9 +5,11 @@ import threading
 import time
 from pathlib import Path
 
+
 def send(proc: subprocess.Popen, obj: dict):
     proc.stdin.write(json.dumps(obj, ensure_ascii=False) + "\n")
     proc.stdin.flush()
+
 
 def reader(proc: subprocess.Popen):
     for line in iter(proc.stdout.readline, ""):
@@ -21,9 +23,10 @@ def reader(proc: subprocess.Popen):
             continue
         print("EVENT:", evt)
 
-def main():
+
+def init_worker(worker_script):
     proc = subprocess.Popen(
-        [sys.executable, "worker_crop.py"],
+        [sys.executable, worker_script],
         stdin=subprocess.PIPE,
         stdout=subprocess.PIPE,
         stderr=subprocess.PIPE,
@@ -34,7 +37,13 @@ def main():
     t = threading.Thread(target=reader, args=(proc,), daemon=True)
     t.start()
 
-    time.sleep(0.2)  # дать воркеру успеть написать started
+    time.sleep(0.2)
+
+    return proc, t
+
+
+def main():
+    proc, _t = init_worker("worker_crop.py")
 
     in_img = r"test/photo_2025-10-27_12-58-17.jpg"
     out_dir = Path("test/crop")
@@ -48,6 +57,7 @@ def main():
     send(proc, {"id": "3", "op": "ext"})
     rc = proc.wait(timeout=5)
     print("worker exit code:", rc)
+
 
 if __name__ == "__main__":
     main()
