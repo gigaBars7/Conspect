@@ -42,11 +42,19 @@ def init_worker(worker_script):
     return proc, t
 
 
+def cache_make_root_dir(cache_dir):
+    cache_dir = Path(cache_dir)
+    cache_dir.mkdir(parents=True, exist_ok=True)
+    return cache_dir
+
+
 def main():
     proc, _t = init_worker("worker_crop.py")
 
+    cache_dir = cache_make_root_dir('cache')
+
     in_img = r"test/photo_2025-10-27_12-58-17.jpg"
-    out_dir = Path("test/crop")
+    out_dir = cache_dir / 'crop'
     out_dir.mkdir(parents=True, exist_ok=True)
     out_img = str(out_dir / "crop.jpg")
 
