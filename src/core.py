@@ -36,7 +36,7 @@ def main():
 
     time.sleep(0.2)  # дать воркеру успеть написать started
 
-    in_img = r"C:\Users\alexa\Downloads\photo_2025-10-27_12-58-17.jpg"
+    in_img = r"test/photo_2025-10-27_12-58-17.jpg"
     out_dir = Path("test/crop")
     out_dir.mkdir(parents=True, exist_ok=True)
     out_img = str(out_dir / "crop.jpg")
