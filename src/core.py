@@ -34,10 +34,15 @@ def init_worker(worker_script):
         bufsize=1,
     )
 
+    first_line = proc.stdout.readline().strip()
+    first_evt = json.loads(first_line)
+    print("EVENT:", first_evt)
+
+    if not (first_evt.get("type") == "started" and first_evt.get("ok") is True):
+        raise RuntimeError(f"worker didn't start properly: {first_evt}")
+
     t = threading.Thread(target=reader, args=(proc,), daemon=True)
     t.start()
-
-    time.sleep(0.2)
 
     return proc, t
 
