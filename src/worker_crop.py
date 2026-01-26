@@ -1,7 +1,7 @@
 import time
 from worker_base import BaseWorker
 
-class EchoWorker(BaseWorker):
+class CropWorker(BaseWorker):
     def on_start(self):
         return {"name": "echo-worker", "ready": True}
 
