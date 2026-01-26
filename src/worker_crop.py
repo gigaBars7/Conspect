@@ -1,4 +1,5 @@
 import time
+import cv2
 from worker_base import BaseWorker
 
 class CropWorker(BaseWorker):
