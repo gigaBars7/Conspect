@@ -43,4 +43,4 @@ class CropWorker(BaseWorker):
         return {"bye": True}
 
 if __name__ == "__main__":
-    EchoWorker().run()
+    CropWorker().run()
