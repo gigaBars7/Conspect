@@ -3,6 +3,8 @@ experiments/*
 !experiments/**/*.ipynb
 experiments/**/.ipynb_checkpoints/
 
+src/.idea/*
+
 experiments/**/runs/
 experiments/**/tests/
 
