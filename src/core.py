@@ -1,12 +1,13 @@
 import subprocess
 import sys
 import json
-import threading
-import time
+import shutil
 from pathlib import Path
 
 
 IMG_EXTS = {".jpg", ".jpeg", ".png"}
+
+IGNORE_ERRORS_DELETE_DIR = False
 
 
 def send(proc: subprocess.Popen, obj: dict):
@@ -14,17 +15,18 @@ def send(proc: subprocess.Popen, obj: dict):
     proc.stdin.flush()
 
 
-def reader(proc: subprocess.Popen):
-    for line in iter(proc.stdout.readline, ""):
+def read_event(proc: subprocess.Popen):
+    while True:
+        line = proc.stdout.readline()
+        if line == "":
+            raise RuntimeError("worker stdout closed")
         line = line.strip()
         if not line:
             continue
         try:
-            evt = json.loads(line)
+            return json.loads(line)
         except json.JSONDecodeError:
             print("[bad json]", line)
-            continue
-        print("EVENT:", evt)
 
 
 def init_worker(worker_script):
@@ -37,17 +39,12 @@ def init_worker(worker_script):
         bufsize=1,
     )
 
-    first_line = proc.stdout.readline().strip()
-    first_evt = json.loads(first_line)
-    print("EVENT:", first_evt)
+    evt = read_event(proc)
+    print("EVENT:", evt)
+    if not (evt.get("type") == "started" and evt.get("ok") is True):
+        raise RuntimeError(f"worker didn't start properly: {evt}")
 
-    if not (first_evt.get("type") == "started" and first_evt.get("ok") is True):
-        raise RuntimeError(f"worker didn't start properly: {first_evt}")
-
-    t = threading.Thread(target=reader, args=(proc,), daemon=True)
-    t.start()
-
-    return proc, t
+    return proc
 
 
 def cache_make_root_dir(cache_dir):
@@ -70,9 +67,24 @@ def list_images(input_dir):
     return files
 
 
+def handle_error_for_image(img_path, img_cache_dir):
+    if IGNORE_ERRORS_DELETE_DIR:
+        try:
+            shutil.rmtree(img_cache_dir)
+        except Exception as e:
+            print(f"[warn] failed to delete cache dir {img_cache_dir}: {e}")
+    else:
+        dst = img_cache_dir / f"FAILED_{img_path.name}"
+        try:
+            shutil.copy2(img_path, dst)
+        except Exception as e:
+            print(f"[warn] failed to save failed input {img_path} -> {dst}: {e}")
+
+
+
 def main():
     id = 1
-    proc, _t = init_worker("whiteboard_worker.py")
+    proc = init_worker("whiteboard_worker.py")
 
     cache_root = cache_make_root_dir('cache')
     input_dir = 'test'
@@ -87,11 +99,28 @@ def main():
             "target_class": 0,
         }
         send(proc, {"id": id, "op": "do", "payload": payload})
+
+        while True:
+            evt = read_event(proc)
+            print("EVENT:", evt)
+
+            if evt.get("type") != "result":
+                continue
+            if evt.get("id") != id:
+                continue
+
+            if evt.get("ok") is True:
+                break
+
+            handle_error_for_image(img_path, cache_img_dir)
+            break
+
         id += 1
 
-        time.sleep(0.05)
-
     send(proc, {"id": id, "op": "ext"})
+    evt = read_event(proc)
+    print("EVENT:", evt)
+
     rc = proc.wait(timeout=10)
     print("worker exit code:", rc)
 
