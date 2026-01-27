@@ -36,11 +36,16 @@ class WhiteboadWorker(BaseWorker):
 
         boxes = pred.boxes
         boxes_count = boxes.cls.cpu().numpy().shape[0]
+        if boxes_count == 0:
+            raise RuntimeError("no detections")
         idxs = np.arange(boxes_count, dtype=int)
 
         classes = boxes.cls.cpu().numpy()
         if target_class is not None:
             idxs = (classes == target_class).nonzero()[0]
+
+        if len(idxs) == 0:
+            raise RuntimeError(f"no detections for target_class")
 
         if len(idxs) >= 2:
             if target_strategy == "conf":
