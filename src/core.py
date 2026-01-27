@@ -86,7 +86,6 @@ def handle_error_for_image(img_path, img_cache_dir):
             print(f"[warn] failed to save failed input {img_path} -> {dst}: {e}")
 
 
-
 def main():
     id = 1
     proc = init_worker("whiteboard_worker.py")
@@ -144,8 +143,22 @@ def main():
             "out_dir": cache_dir_in_img_dir,
         }
         send(proc2, {"id": id, "op": "do", "payload": payload})
-        evt = read_event(proc2)
-        print("EVENT:", evt)
+
+        while True:
+            evt = read_event(proc2)
+            print("EVENT:", evt)
+
+            if evt.get("type") != "result":
+                continue
+            if evt.get("id") != id:
+                continue
+
+            if evt.get("ok") is True:
+                break
+
+            handle_error_for_image(img_path, cache_dir_in_img_dir)
+            break
+
         id += 1
 
     send(proc2, {"id": id, "op": "ext"})
