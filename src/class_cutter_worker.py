@@ -1,8 +1,23 @@
 import cv2
+import numpy as np
+from pathlib import Path
+from ultralytics import YOLO
+
 from worker_base import BaseWorker
 
 class ClassCutterWorker(BaseWorker):
+    def __init__(self):
+        super().__init__()
+        self.model = None
+
+
     def on_start(self):
+        HERE = Path(__file__).resolve().parent
+        weights = HERE.parent / 'weights' / 'class_cutter' / 'best.pt'
+        if not weights.exists():
+            raise FileNotFoundError(f"Weights not found: {weights}")
+
+        self.model = YOLO(str(weights))
         return {"name": "class_cutter-worker", "ready": True}
 
 
