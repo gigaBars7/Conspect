@@ -134,8 +134,9 @@ def main():
     cache_dirs_queue = list_cache_dirs(cache_root)
 
     print("\nCACHE DIRS QUEUE:")
-    for p in cache_dirs_queue:
-        print(" -", p)
+    for cache_dir in cache_dirs_queue:
+        img_path = list_images(cache_dir)[0]
+        print(" -", img_path)
 
 
 if __name__ == "__main__":
