@@ -81,7 +81,12 @@ def main():
     for img_path in queue:
         cache_img_dir = cache_make_image_dir(cache_root, img_path.stem)
         out_img = cache_img_dir / f'whiteboard_{img_path.name}'
-        send(proc, {"id": id, "op": "do", "payload": {"image_path": img_path, "out_path": out_img}})
+        payload = {
+            "image_path": img_path,
+            "out_path": out_img,
+            "target_class": 0,
+        }
+        send(proc, {"id": id, "op": "do", "payload": payload})
         id += 1
 
         time.sleep(0.05)
