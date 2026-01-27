@@ -72,7 +72,7 @@ def list_images(input_dir):
 
 def main():
     id = 1
-    proc, _t = init_worker("worker_crop.py")
+    proc, _t = init_worker("whiteboard_worker.py")
 
     cache_root = cache_make_root_dir('cache')
     input_dir = 'test'
@@ -80,7 +80,7 @@ def main():
     queue = list_images(input_dir)
     for img_path in queue:
         cache_img_dir = cache_make_image_dir(cache_root, img_path.stem)
-        out_img = cache_img_dir / f'crop_{img_path.name}'
+        out_img = cache_img_dir / f'whiteboard_{img_path.name}'
         send(proc, {"id": id, "op": "do", "payload": {"image_path": img_path, "out_path": out_img}})
         id += 1
 
