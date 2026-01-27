@@ -92,7 +92,7 @@ def main():
         time.sleep(0.05)
 
     send(proc, {"id": id, "op": "ext"})
-    rc = proc.wait(timeout=5)
+    rc = proc.wait(timeout=10)
     print("worker exit code:", rc)
 
 
