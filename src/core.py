@@ -67,6 +67,11 @@ def list_images(input_dir):
     return files
 
 
+def list_cache_dirs(cache_root):
+    dirs = [p for p in cache_root.iterdir() if p.is_dir()]
+    return dirs
+
+
 def handle_error_for_image(img_path, img_cache_dir):
     if IGNORE_ERRORS_DELETE_DIR:
         try:
@@ -123,6 +128,14 @@ def main():
 
     rc = proc.wait(timeout=10)
     print("worker exit code:", rc)
+
+
+    # Второй воркер
+    cache_dirs_queue = list_cache_dirs(cache_root)
+
+    print("\nCACHE DIRS QUEUE:")
+    for p in cache_dirs_queue:
+        print(" -", p)
 
 
 if __name__ == "__main__":
