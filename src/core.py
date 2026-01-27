@@ -133,22 +133,28 @@ def main():
 
     # Второй воркер
     proc2 = init_worker("class_cutter_worker.py")
-    send(proc2, {"id": id, "op": "ext"})
 
+    cache_dirs_queue = list_cache_dirs(cache_root)
+
+    for cache_dir in cache_dirs_queue:
+        cache_dir_in_img_dir = cache_make_image_dir(cache_dir, 'class_cutter')
+        img_path = list_images(cache_dir)[0]
+        payload = {
+            "image_path": img_path,
+            "out_dir": cache_dir_in_img_dir,
+        }
+        send(proc2, {"id": id, "op": "do", "payload": payload})
+        evt = read_event(proc2)
+        print("EVENT:", evt)
+        id += 1
+
+    send(proc2, {"id": id, "op": "ext"})
+    id += 1
     evt = read_event(proc2)
     print("EVENT:", evt)
 
     rc = proc2.wait(timeout=10)
     print(f"worker exit code: {rc}\n")
-
-
-    cache_dirs_queue = list_cache_dirs(cache_root)
-
-    print("\nCACHE DIRS QUEUE:")
-    for cache_dir in cache_dirs_queue:
-        img_path = list_images(cache_dir)[0]
-        print(" -", img_path)
-
 
 if __name__ == "__main__":
     main()
