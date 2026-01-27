@@ -15,7 +15,11 @@ class ClassCutterWorker(BaseWorker):
         x2 = x1 + cw
         y2 = y1 + ch
         crop = img[y1:y2, x1:x2]
-        return crop
+        return [
+            {'id': 0, 'cls': 1, 'img': crop},
+            {'id': 1, 'cls': 2, 'img': crop},
+            {'id': 2, 'cls': 0, 'img': crop}
+        ]
 
 
     def handle(self, op, payload):
@@ -23,19 +27,27 @@ class ClassCutterWorker(BaseWorker):
             raise ValueError(f"unknown op: {op}")
 
         image_path = payload["image_path"]
-        out_path = payload["out_path"]
+        out_dir = payload["out_dir"]
 
-        img = cv2.imread(image_path, cv2.IMREAD_COLOR)
-        if img is None:
+        src_img = cv2.imread(image_path, cv2.IMREAD_COLOR)
+        src_ext = image_path.split(".")[-1]
+        if src_img is None:
             raise FileNotFoundError(f"cannot read image: {image_path}")
 
-        crop = self._process_image(img)
+        img_paths = []
+        preds = self._process_image(src_img)
+        for pred_img in preds:
+            img_id = pred_img["id"]
+            img_cls = pred_img["cls"]
+            img = pred_img["img"]
 
-        ok = cv2.imwrite(out_path, crop)
-        if not ok:
-            raise RuntimeError(f"failed to write image: {out_path}")
+            img_name = f'{img_id}_{img_cls}.{src_ext}'
+            out_file = f'{out_dir}/{img_name}'
+            img_paths.append(out_file)
 
-        return {"crop_path": out_path}
+            ok = cv2.imwrite(out_file, img)
+
+        return {"img_paths": img_paths}
 
 
     def on_shutdown(self):
