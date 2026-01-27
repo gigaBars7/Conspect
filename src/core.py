@@ -123,14 +123,25 @@ def main():
         id += 1
 
     send(proc, {"id": id, "op": "ext"})
+    id += 1
     evt = read_event(proc)
     print("EVENT:", evt)
 
     rc = proc.wait(timeout=10)
-    print("worker exit code:", rc)
+    print(f"worker exit code: {rc}\n")
 
 
     # Второй воркер
+    proc2 = init_worker("worker_crop.py")
+    send(proc2, {"id": id, "op": "ext"})
+
+    evt = read_event(proc2)
+    print("EVENT:", evt)
+
+    rc = proc2.wait(timeout=10)
+    print(f"worker exit code: {rc}\n")
+
+
     cache_dirs_queue = list_cache_dirs(cache_root)
 
     print("\nCACHE DIRS QUEUE:")
