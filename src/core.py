@@ -132,7 +132,7 @@ def main():
 
 
     # Второй воркер
-    proc2 = init_worker("worker_crop.py")
+    proc2 = init_worker("class_cutter_worker.py")
     send(proc2, {"id": id, "op": "ext"})
 
     evt = read_event(proc2)
