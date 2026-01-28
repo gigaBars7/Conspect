@@ -169,5 +169,40 @@ def main():
     rc = proc2.wait(timeout=10)
     print(f"worker exit code: {rc}\n")
 
+
+    # Третий воркер
+    proc3 = init_worker("worker_baseOCR.py")
+
+    cache_dirs_queue = list_cache_dirs(cache_root)
+
+    for cache_dir in cache_dirs_queue:
+        cache_dir_in_img_dir = cache_make_image_dir(cache_dir, 'baseOCR')
+
+        class_cutter_dir = cache_dir / 'class_cutter'
+        imgs = sorted(
+            list_images(class_cutter_dir),
+            key=lambda x: x if 'FAILED' in str(x.stem) else int(str(x.stem).split("_")[0])
+        )
+
+        for img_path in imgs:
+            if str(img_path.stem).split("_")[1] in ('0', '1', 'FAILED'):
+                payload = {
+                    "image_path": img_path,
+                    "out_dir": cache_dir_in_img_dir,
+                }
+                send(proc3, {"id": id, "op": "do", "payload": payload})
+                id += 1
+
+    send(proc3, {"id": id, "op": "ext"})
+    id += 1
+    evt = read_event(proc3)
+    print("EVENT:", evt)
+
+    rc = proc3.wait(timeout=10)
+    print(f"worker exit code: {rc}\n")
+
+
+
+
 if __name__ == "__main__":
     main()
