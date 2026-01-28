@@ -6,6 +6,7 @@ from pathlib import Path
 
 
 IMG_EXTS = {".jpg", ".jpeg", ".png"}
+TARGET_CLASS = 0    # 0 - text;  1 - handwritten text
 WHEN_ERRORS_IN_WHITEBOARD_DELETE_DIR = False
 WHEN_ERRORS_IN_CLASSCUTTER_IGNORE_DIR = True
 
@@ -111,7 +112,7 @@ def main():
         payload = {
             "image_path": img_path,
             "out_path": out_img,
-            "target_class": 0,
+            "target_class": TARGET_CLASS,
         }
         send(proc, {"id": id, "op": "do", "payload": payload})
 
