@@ -173,6 +173,9 @@ def main():
     # Третий воркер
     proc3 = init_worker("worker_baseOCR.py")
 
+    result_path = cache_root / 'result.txt'
+    result_file = result_path.open('w', encoding='utf-8')
+
     cache_dirs_queue = list_cache_dirs(cache_root)
 
     for cache_dir in cache_dirs_queue:
@@ -183,6 +186,9 @@ def main():
             list_images(class_cutter_dir),
             key=lambda x: x if 'FAILED' in str(x.stem) else int(str(x.stem).split("_")[0])
         )
+
+        result_file.write('=' * 100 + '\n')
+        result_file.write(cache_dir.name + '\n\n')
 
         for img_path in imgs:
             if str(img_path.stem).split("_")[1] in ('0', '1', 'FAILED'):
@@ -202,11 +208,18 @@ def main():
                         continue
 
                     if evt.get("ok") is True:
+                        txt_path = evt.get("payload").get("txt_path")
+                        txt = Path(txt_path).read_text(encoding='utf-8')
+                        if txt:
+                            result_file.write(txt + '\n\n')
                         break
 
                     break
 
                 id += 1
+    result_file.write('=' * 100 + '\n')
+    result_file.flush()
+    result_file.close()
 
     send(proc3, {"id": id, "op": "ext"})
     id += 1
@@ -215,7 +228,6 @@ def main():
 
     rc = proc3.wait(timeout=10)
     print(f"worker exit code: {rc}\n")
-
 
 
 
