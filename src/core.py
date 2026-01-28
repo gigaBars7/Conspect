@@ -7,6 +7,7 @@ from pathlib import Path
 
 IMG_EXTS = {".jpg", ".jpeg", ".png"}
 TARGET_CLASS = 0    # 0 - text;  1 - handwritten text
+TARGET_STRATEGY = 'conf'    # conf или size
 WHEN_ERRORS_IN_WHITEBOARD_DELETE_DIR = False
 WHEN_ERRORS_IN_CLASSCUTTER_IGNORE_DIR = True
 
@@ -113,6 +114,7 @@ def main():
             "image_path": img_path,
             "out_path": out_img,
             "target_class": TARGET_CLASS,
+            "target_strategy": TARGET_STRATEGY
         }
         send(proc, {"id": id, "op": "do", "payload": payload})
 
