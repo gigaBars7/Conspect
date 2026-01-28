@@ -191,6 +191,21 @@ def main():
                     "out_dir": cache_dir_in_img_dir,
                 }
                 send(proc3, {"id": id, "op": "do", "payload": payload})
+
+                while True:
+                    evt = read_event(proc3)
+                    print("EVENT:", evt)
+
+                    if evt.get("type") != "result":
+                        continue
+                    if evt.get("id") != id:
+                        continue
+
+                    if evt.get("ok") is True:
+                        break
+
+                    break
+
                 id += 1
 
     send(proc3, {"id": id, "op": "ext"})
