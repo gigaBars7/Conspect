@@ -6,8 +6,8 @@ from pathlib import Path
 
 
 IMG_EXTS = {".jpg", ".jpeg", ".png"}
-
-IGNORE_ERRORS_DELETE_DIR = False
+WHEN_ERRORS_IN_WHITEBOARD_DELETE_DIR = False
+WHEN_ERRORS_IN_CLASSCUTTER_IGNORE_DIR = True
 
 
 def send(proc: subprocess.Popen, obj: dict):
@@ -72,18 +72,29 @@ def list_cache_dirs(cache_root):
     return dirs
 
 
-def handle_error_for_image(img_path, img_cache_dir):
-    if IGNORE_ERRORS_DELETE_DIR:
+def handle_error_whiteboard(img_path, img_cache_dir):
+    if WHEN_ERRORS_IN_WHITEBOARD_DELETE_DIR:
         try:
             shutil.rmtree(img_cache_dir)
         except Exception as e:
             print(f"[warn] failed to delete cache dir {img_cache_dir}: {e}")
     else:
-        dst = img_cache_dir / f"FAILED_{img_path.name}"
+        dst = img_cache_dir / f"FAILED_{Path(img_path).name}"
         try:
             shutil.copy2(img_path, dst)
         except Exception as e:
             print(f"[warn] failed to save failed input {img_path} -> {dst}: {e}")
+
+
+def handle_error_classcutter(prev_stage_img_path, class_cutter_dir):
+    if WHEN_ERRORS_IN_CLASSCUTTER_IGNORE_DIR:
+        return
+    else:
+        dst = class_cutter_dir / f"FAILED_{Path(prev_stage_img_path).name}"
+        try:
+            shutil.copy2(prev_stage_img_path, dst)
+        except Exception as e:
+            print(f"[warn] failed to save failed input {prev_stage_img_path} -> {dst}: {e}")
 
 
 def main():
@@ -116,7 +127,7 @@ def main():
             if evt.get("ok") is True:
                 break
 
-            handle_error_for_image(img_path, cache_img_dir)
+            handle_error_whiteboard(img_path, cache_img_dir)
             break
 
         id += 1
@@ -156,7 +167,7 @@ def main():
             if evt.get("ok") is True:
                 break
 
-            handle_error_for_image(img_path, cache_dir_in_img_dir)
+            handle_error_classcutter(img_path, cache_dir_in_img_dir)
             break
 
         id += 1
