@@ -1,4 +1,5 @@
 import cv2
+import pytesseract
 from pathlib import Path
 from worker_base import BaseWorker
 
@@ -6,8 +7,22 @@ class BaceOCRWorker(BaseWorker):
     def on_start(self):
         return {"name": "baseOCR-worker", "ready": True}
 
+    def preprocess_text(self, img):
+        gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
+        gray = cv2.resize(gray, None, fx=2.0, fy=2.0, interpolation=cv2.INTER_CUBIC)
+        gray = cv2.bilateralFilter(gray, d=7, sigmaColor=40, sigmaSpace=40)
+        bg = cv2.medianBlur(gray, 31)
+        norm = cv2.divide(gray, bg, scale=255)
+        otsu = cv2.threshold(norm, 0, 255, cv2.THRESH_BINARY + cv2.THRESH_OTSU)[1]
+        return otsu
 
-    def _process_image(self, img, img_path):
+    def preprocess_handwritten(self, img):
+        gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
+        otsu = cv2.threshold(gray, 0, 255, cv2.THRESH_BINARY + cv2.THRESH_OTSU)[1]
+        return otsu
+
+
+    def _process_image(self, img, img_path, lang="rus+eng"):
         stem = Path(img_path).stem
         parts =stem.split("_")
         if len(parts) < 2:
@@ -20,7 +35,16 @@ class BaceOCRWorker(BaseWorker):
             self.img_id = '0'
             self.cls_id = '0'
 
-        text = f"Текст из изображения: {self.img_id} Класс: {self.cls_id}"
+        if self.cls_id == "0":
+            bin_img = self.preprocess_text(img)
+            psm = 6
+        elif self.cls_id == "1":
+            bin_img = self.preprocess_handwritten(img)
+            psm = 3
+
+        cfg = f'--oem 3 --psm {psm} -c preserve_interword_spaces=1'
+        text = pytesseract.image_to_string(bin_img, lang=lang, config=cfg)
+
         return {"img_id": self.img_id, "cls_id": self.cls_id, "text": text}
 
 
