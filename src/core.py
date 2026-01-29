@@ -10,6 +10,7 @@ TARGET_CLASS = 0    # 0 - text;  1 - handwritten text
 TARGET_STRATEGY = 'conf'    # conf или size
 WHEN_ERRORS_IN_WHITEBOARD_DELETE_DIR = False
 WHEN_ERRORS_IN_CLASSCUTTER_IGNORE_DIR = True
+RESULT_SAVE_PATH = Path('')
 
 
 def send(proc: subprocess.Popen, obj: dict):
@@ -53,6 +54,7 @@ def cache_make_root_dir(cache_dir):
     cache_dir = Path(cache_dir)
     cache_dir.mkdir(parents=True, exist_ok=True)
     return cache_dir
+
 
 def cache_make_image_dir(cache_dir, img_name):
     cache_img_dir = cache_dir / img_name
@@ -187,7 +189,7 @@ def main():
     # Третий воркер
     proc3 = init_worker("worker_baseOCR.py")
 
-    result_path = cache_root / 'result.txt'
+    result_path = RESULT_SAVE_PATH / 'result.txt'
     result_file = result_path.open('w', encoding='utf-8')
 
     cache_dirs_queue = list_cache_dirs(cache_root)
