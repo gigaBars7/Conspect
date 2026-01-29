@@ -10,6 +10,7 @@ TARGET_CLASS = 0    # 0 - text;  1 - handwritten text
 TARGET_STRATEGY = 'conf'    # conf или size
 WHEN_ERRORS_IN_WHITEBOARD_DELETE_DIR = False
 WHEN_ERRORS_IN_CLASSCUTTER_IGNORE_DIR = True
+DIR_WITH_IMAGES_FOR_ANALYZE = Path('images')
 RESULT_SAVE_PATH = Path('')
 DELETE_CACHE_AFTER_COMPLETION = True
 
@@ -107,9 +108,8 @@ def main():
     proc = init_worker("whiteboard_worker.py")
 
     cache_root = cache_make_root_dir('cache')
-    input_dir = 'test'
 
-    queue = list_images(input_dir)
+    queue = list_images(DIR_WITH_IMAGES_FOR_ANALYZE)
     for img_path in queue:
         cache_img_dir = cache_make_image_dir(cache_root, img_path.stem)
         out_img = cache_img_dir / f'whiteboard_{img_path.name}'
