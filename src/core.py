@@ -11,6 +11,7 @@ TARGET_STRATEGY = 'conf'    # conf или size
 WHEN_ERRORS_IN_WHITEBOARD_DELETE_DIR = False
 WHEN_ERRORS_IN_CLASSCUTTER_IGNORE_DIR = True
 RESULT_SAVE_PATH = Path('')
+DELETE_CACHE_AFTER_COMPLETION = True
 
 
 def send(proc: subprocess.Popen, obj: dict):
@@ -245,6 +246,10 @@ def main():
     rc = proc3.wait(timeout=10)
     print(f"worker exit code: {rc}\n")
 
+
+    if DELETE_CACHE_AFTER_COMPLETION:
+        shutil.rmtree(cache_root)
+        print(f'Deleted cache at: {cache_root}')
 
 
 if __name__ == "__main__":
