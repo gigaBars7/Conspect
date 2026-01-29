@@ -7,6 +7,8 @@ src/.idea/*
 src/__pychache__/
 src/test/*
 src/cache/*
+src/result.txt
+src/images/*
 
 experiments/**/runs/
 experiments/**/tests/
