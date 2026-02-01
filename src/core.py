@@ -6,12 +6,13 @@ from pathlib import Path
 
 
 IMG_EXTS = {".jpg", ".jpeg", ".png"}
-TARGET_CLASS = 0    # 0 - text;  1 - handwritten text
+TARGET_CLASS = 0    # 0 - screen;  1 - whiteboard
 TARGET_STRATEGY = 'conf'    # conf или size
 WHEN_ERRORS_IN_WHITEBOARD_DELETE_DIR = False
 WHEN_ERRORS_IN_CLASSCUTTER_IGNORE_DIR = True
 DIR_WITH_IMAGES_FOR_ANALYZE = 'images'
 RESULT_SAVE_DIR = ''
+MODE = 2    # 0 - tesseract;  1 - easyocr;  2 - tesseract+easyocr
 DELETE_CACHE_AFTER_COMPLETION = True
 
 
@@ -274,7 +275,7 @@ def main():
 
 
     # Третий воркер
-    proc3 = init_worker("worker_baseOCR.py")
+    proc3 = init_worker("baseOCR2_worker.py")
 
     result_path = result_save_dir / 'result.txt'
     result_file = result_path.open('w', encoding='utf-8')
@@ -282,8 +283,6 @@ def main():
     cache_dirs_queue = list_cache_dirs(cache_root)
 
     for cache_dir in cache_dirs_queue:
-        cache_dir_in_img_dir = cache_make_image_dir(cache_dir, 'baseOCR')
-
         class_cutter_dir = cache_dir / 'class_cutter'
         imgs = sorted(
             list_images(class_cutter_dir),
@@ -293,17 +292,18 @@ def main():
         result_file.write('=' * 100 + '\n')
         result_file.write(cache_dir.name + '\n\n')
 
+        t_buf = []
+        e_buf = []
         for img_path in imgs:
             if str(img_path.stem).split("_")[1] in ('0', '1', 'FAILED'):
                 payload = {
                     "image_path": img_path,
-                    "out_dir": cache_dir_in_img_dir,
+                    "mode": MODE
                 }
                 send(proc3, {"id": id, "op": "do", "payload": payload})
 
                 while True:
                     evt = read_event(proc3)
-                    print("EVENT:", evt)
 
                     if evt.get("type") != "result":
                         continue
@@ -311,15 +311,37 @@ def main():
                         continue
 
                     if evt.get("ok") is True:
-                        txt_path = evt.get("payload").get("txt_path")
-                        txt = Path(txt_path).read_text(encoding='utf-8')
-                        if txt:
-                            result_file.write(txt + '\n\n')
+                        worker_payload = evt.get("payload")
+                        t_text = worker_payload.get("tesseract_text")
+                        e_text = worker_payload.get("easyocr_text")
+
+                        if t_text:
+                            t_buf.append(t_text)
+                            evt['payload']['tesseract_text'] = t_text.replace('\n', '')[:30]
+                        if e_text:
+                            e_buf.append(e_text)
+                            evt['payload']['easyocr_text'] = e_text.replace('\n', '')[:30]
+
+                        print("EVENT:", evt)
                         break
 
                     break
 
                 id += 1
+
+        if MODE == 2:
+            result_file.write("{{tesseract}}\n\n")
+            result_file.write("\n\n".join(t_buf).strip() + "\n\n")
+
+            result_file.write("-" * 100 + "\n\n")
+
+            result_file.write("{{easyocr}}\n\n")
+            result_file.write("\n\n".join(e_buf).strip() + "\n\n")
+        elif MODE == 0:
+            result_file.write("\n\n".join(t_buf).strip() + "\n\n")
+        elif MODE == 1:
+            result_file.write("\n\n".join(e_buf).strip() + "\n\n")
+
     result_file.write('=' * 100 + '\n')
     result_file.flush()
     result_file.close()
