@@ -10,8 +10,8 @@ TARGET_CLASS = 0    # 0 - text;  1 - handwritten text
 TARGET_STRATEGY = 'conf'    # conf или size
 WHEN_ERRORS_IN_WHITEBOARD_DELETE_DIR = False
 WHEN_ERRORS_IN_CLASSCUTTER_IGNORE_DIR = True
-DIR_WITH_IMAGES_FOR_ANALYZE = Path('images')
-RESULT_SAVE_PATH = Path('')
+DIR_WITH_IMAGES_FOR_ANALYZE = 'images'
+RESULT_SAVE_DIR = ''
 DELETE_CACHE_AFTER_COMPLETION = True
 
 
@@ -103,13 +103,99 @@ def handle_error_classcutter(prev_stage_img_path, class_cutter_dir):
             print(f"[warn] failed to save failed input {prev_stage_img_path} -> {dst}: {e}")
 
 
+def print_settings(left_part_width=48):
+    print('Текущие настройки:')
+
+    print(f'{("1) TARGET_CLASS = " + str(TARGET_CLASS)).ljust(left_part_width)}  '
+          f'|  Искать на изображении:')
+    print(f'{" " * left_part_width}  |  0 - экран')
+    print(f'{"".rjust(left_part_width)}  |  1 - доска')
+
+    print(f'{("2) WHEN_ERRORS_IN_WHITEBOARD_DELETE_DIR = " + str(WHEN_ERRORS_IN_WHITEBOARD_DELETE_DIR)).ljust(left_part_width)}  '
+          f'|  При ошибках модели поиска экрана/доски:')
+    print(f'{" " * left_part_width}  |  False - как результат взять анализируемое изображение')
+    print(f'{" " * left_part_width}  |  True - проигнорировать анализируемое изображение')
+
+    print(f'{("3) WHEN_ERRORS_IN_CLASSCUTTER_IGNORE_DIR = " + str(WHEN_ERRORS_IN_CLASSCUTTER_IGNORE_DIR)).ljust(left_part_width)}  '
+          f'|  При ошибках модели классификации:')
+    print(f'{" " * left_part_width}  |  False - как результат взять анализируемое изображение')
+    print(f'{" " * left_part_width}  |  True - проигнорировать анализируемое изображение')
+
+    dir_with_images = DIR_WITH_IMAGES_FOR_ANALYZE
+    if dir_with_images == 'images':
+        dir_with_images = 'src/images'
+    print(f'{("4) DIR_WITH_IMAGES_FOR_ANALYZE = " + str(dir_with_images)).ljust(left_part_width)}  '
+          f'|  Путь директории с изображениями для анализа:')
+    print(f'{" " * left_part_width}  |  по умолчанию src/images')
+
+    result_save_dir = RESULT_SAVE_DIR
+    if result_save_dir == '':
+        result_save_dir = 'src/'
+    print(f'{("5) RESULT_SAVE_DIR = " + str(result_save_dir)).ljust(left_part_width)}  '
+          f'|  Директория для сохранения текстового файла с результатом:')
+    print(f'{" " * left_part_width}  |  по умолчанию src/')
+    print()
+
+
+def agree_with_question(question):
+    asn = input(question).strip().lower()
+    if asn in ("y", "yes", "1", "true"):
+        return True
+    else:
+        return False
+
+
+def configure():
+    global TARGET_CLASS, WHEN_ERRORS_IN_WHITEBOARD_DELETE_DIR, \
+        WHEN_ERRORS_IN_CLASSCUTTER_IGNORE_DIR, DIR_WITH_IMAGES_FOR_ANALYZE, RESULT_SAVE_DIR
+
+    print_settings()
+    use_default = agree_with_question('Использовать настройки по умолчанию (Y, n)? ')
+    print()
+    if not use_default:
+        while True:
+            num_prm_to_change = input('Введите номер параметра для изменения: ').strip()
+            if num_prm_to_change == '1':
+                new_prm = int(input('Введите новое значение (0 или 1): ').strip())
+                if new_prm in (0, 1):
+                    TARGET_CLASS = new_prm
+            elif num_prm_to_change == '2':
+                new_prm = input('Введите новое значение (True или False): ').strip().lower()
+                if new_prm == 'true':
+                    WHEN_ERRORS_IN_WHITEBOARD_DELETE_DIR = True
+                elif new_prm == 'false':
+                    WHEN_ERRORS_IN_CLASSCUTTER_IGNORE_DIR = False
+            elif num_prm_to_change == '3':
+                new_prm = input('Введите новое значение (True или False): ').strip().lower()
+                if new_prm == 'true':
+                    WHEN_ERRORS_IN_CLASSCUTTER_IGNORE_DIR = True
+                elif new_prm == 'false':
+                    WHEN_ERRORS_IN_CLASSCUTTER_IGNORE_DIR = False
+            elif num_prm_to_change == '4':
+                new_prm = input('Введите новый путь директории с изображениями для анализа (путь относительно src/ ): ').strip()
+                DIR_WITH_IMAGES_FOR_ANALYZE = new_prm
+            elif num_prm_to_change == '5':
+                new_prm = input('Введите новый путь директории с изображениями для анализа (путь относительно src/ ): ').strip()
+                RESULT_SAVE_DIR = new_prm
+
+            print()
+            print_settings()
+            use_current = agree_with_question('Использовать текущие настройки (Y, n)? ')
+            print()
+            if use_current:
+                break
+
+
 def main():
+    dir_with_images = Path(DIR_WITH_IMAGES_FOR_ANALYZE)
+    result_save_dir = Path(RESULT_SAVE_DIR)
+
     id = 1
     proc = init_worker("whiteboard_worker.py")
 
     cache_root = cache_make_root_dir('cache')
 
-    queue = list_images(DIR_WITH_IMAGES_FOR_ANALYZE)
+    queue = list_images(dir_with_images)
     for img_path in queue:
         cache_img_dir = cache_make_image_dir(cache_root, img_path.stem)
         out_img = cache_img_dir / f'whiteboard_{img_path.name}'
@@ -190,7 +276,7 @@ def main():
     # Третий воркер
     proc3 = init_worker("worker_baseOCR.py")
 
-    result_path = RESULT_SAVE_PATH / 'result.txt'
+    result_path = result_save_dir / 'result.txt'
     result_file = result_path.open('w', encoding='utf-8')
 
     cache_dirs_queue = list_cache_dirs(cache_root)
@@ -253,4 +339,6 @@ def main():
 
 
 if __name__ == "__main__":
+    print('\nCONSPECT\n\n')
+    configure()
     main()
