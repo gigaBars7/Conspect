@@ -21,7 +21,7 @@ class WhiteboadWorker(BaseWorker):
         return {"name": "whiteboard-worker", "ready": True}
 
 
-    def _process_image(self, img, target_class=None, target_strategy='conf'):
+    def _predict(self, img):
         pred = self.model.predict(
             source=img,
             conf=0.25,
@@ -30,40 +30,49 @@ class WhiteboadWorker(BaseWorker):
             save=False,
             verbose=False
         )[0]
+        return pred
 
-        img_rgb = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
-        H, W = img.shape[:2]
 
+    def _select_detection_index(self, pred, target_class=None, target_strategy="conf"):
         boxes = pred.boxes
-        boxes_count = boxes.cls.cpu().numpy().shape[0]
+        boxes_count = int(boxes.cls.shape[0])
         if boxes_count == 0:
             raise RuntimeError("no detections")
         idxs = np.arange(boxes_count, dtype=int)
 
-        classes = boxes.cls.cpu().numpy()
         if target_class is not None:
+            classes = boxes.cls.cpu().numpy()
             idxs = (classes == target_class).nonzero()[0]
 
         if len(idxs) == 0:
-            raise RuntimeError(f"no detections for target_class")
+            raise RuntimeError("no detections for target_class")
 
-        if len(idxs) >= 2:
-            if target_strategy == "conf":
-                idxs = idxs[boxes.conf[idxs].argmax()]
-            elif target_strategy == "size":
-                xywh = boxes.xywh.cpu().numpy()
-                sizes = xywh[:, 2] * xywh[:, 3]
-                idxs = int(idxs[np.argmax(sizes[idxs])])
+        if len(idxs) == 1:
+            return int(idxs[0])
 
-        mask = pred.masks.data[idxs].detach().cpu().numpy()
+        if target_strategy == "conf":
+            return int(idxs[boxes.conf[idxs].argmax()])
+        elif target_strategy == "size":
+            xywh = boxes.xywh.cpu().numpy()
+            sizes = xywh[:, 2] * xywh[:, 3]
+            return int(idxs[np.argmax(sizes[idxs])])
+
+
+    def _mask_for_index(self, pred, idx, W, H):
+        mask = pred.masks.data[idx].detach().cpu().numpy()
         if mask.ndim == 3:
             mask = mask[0]
         mask = cv2.resize(mask, (W, H), cv2.INTER_NEAREST)
         mask = (mask > 0.5).astype(np.uint8) * 255
+        return mask
 
+
+    def _largest_contour(self, mask):
         cnts, _ = cv2.findContours(mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
-        cnt = max(cnts, key=cv2.contourArea)
+        return max(cnts, key=cv2.contourArea)
 
+
+    def _quad_from_contour(self, cnt):
         peri = cv2.arcLength(cnt, True)
         quad = cv2.approxPolyDP(cnt, 0.02 * peri, True)
 
@@ -72,28 +81,51 @@ class WhiteboadWorker(BaseWorker):
         else:
             rect = cv2.minAreaRect(cnt)
             box = cv2.boxPoints(rect)
+        return box
 
-        box = box.astype(int)
 
-        poly_mask = np.zeros((H, W), dtype=np.uint8)
-        cv2.fillPoly(poly_mask, [box.astype(np.int32)], 255)
-        _crop_poly = cv2.bitwise_and(img_rgb, img_rgb, mask=poly_mask)
-
-        pts = box.astype(np.float32)
-        s = pts.sum(1)
+    def _order_points_tl_tr_br_bl(self, pts):
+        pts = pts.astype(np.float32)
+        s = pts.sum(axis=1)
         d = np.diff(pts, axis=1).ravel()
+
         tl = pts[np.argmin(s)]
         br = pts[np.argmax(s)]
         tr = pts[np.argmin(d)]
         bl = pts[np.argmax(d)]
-        src = np.array([tl, tr, br, bl], np.float32)
 
+        return np.array([tl, tr, br, bl], dtype=np.float32)
+
+
+    def _compute_warp_size(self, src):
+        tl, tr, br, bl = src
         w = int(max(np.linalg.norm(br - bl), np.linalg.norm(tr - tl)))
         h = int(max(np.linalg.norm(tr - br), np.linalg.norm(tl - bl)))
+        w = max(1, w)
+        h = max(1, h)
+        return w, h
 
-        dst = np.array([[0, 0], [w - 1, 0], [w - 1, h - 1], [0, h - 1]], np.float32)
+
+    def _warp_perspective_rgb(self, img_rgb, src):
+        w, h = self._compute_warp_size(src)
+        dst = np.array([[0, 0], [w - 1, 0], [w - 1, h - 1], [0, h - 1]], dtype=np.float32)
         M = cv2.getPerspectiveTransform(src, dst)
-        warp = cv2.warpPerspective(img_rgb, M, (w, h))
+        return cv2.warpPerspective(img_rgb, M, (w, h))
+
+
+    def _process_image(self, img, target_class=None, target_strategy='conf'):
+        pred = self._predict(img)
+        H, W = img.shape[:2]
+        img_rgb = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
+
+        idx = self._select_detection_index(
+            pred, target_class=target_class, target_strategy=target_strategy
+        )
+        mask = self._mask_for_index(pred, idx=idx, W=W, H=H)
+        cnt = self._largest_contour(mask)
+        box = self._quad_from_contour(cnt)
+        src = self._order_points_tl_tr_br_bl(box)
+        warp = self._warp_perspective_rgb(img_rgb, src)
 
         return warp
 
