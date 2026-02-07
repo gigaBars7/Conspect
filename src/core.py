@@ -12,7 +12,7 @@ WHEN_ERRORS_IN_WHITEBOARD_DELETE_DIR = False
 WHEN_ERRORS_IN_CLASSCUTTER_IGNORE_DIR = True
 DIR_WITH_IMAGES_FOR_ANALYZE = 'images'
 RESULT_SAVE_DIR = ''
-MODE = 2    # 0 - tesseract;  1 - easyocr;  2 - tesseract+easyocr
+MODE = 0    # 0 - tesseract;  1 - easyocr;  2 - tesseract + easyocr
 DELETE_CACHE_AFTER_COMPLETION = True
 
 
@@ -135,6 +135,13 @@ def print_settings(left_part_width=48):
     print(f'{("5) RESULT_SAVE_DIR = " + str(result_save_dir)).ljust(left_part_width)}  '
           f'|  Директория для сохранения текстового файла с результатом:')
     print(f'{" " * left_part_width}  |  по умолчанию src/')
+
+    print(f'{("6) MODE = " + str(MODE)).ljust(left_part_width)}  '
+          f'|  Режим работы OCR:')
+    print(f'{" " * left_part_width}  |  0 - tesseract')
+    print(f'{" " * left_part_width}  |  1 - easyocr')
+    print(f'{" " * left_part_width}  |  2 - tesseract + easyocr')
+
     print()
 
 
@@ -148,7 +155,7 @@ def agree_with_question(question):
 
 def configure():
     global TARGET_CLASS, WHEN_ERRORS_IN_WHITEBOARD_DELETE_DIR, \
-        WHEN_ERRORS_IN_CLASSCUTTER_IGNORE_DIR, DIR_WITH_IMAGES_FOR_ANALYZE, RESULT_SAVE_DIR
+        WHEN_ERRORS_IN_CLASSCUTTER_IGNORE_DIR, DIR_WITH_IMAGES_FOR_ANALYZE, RESULT_SAVE_DIR, MODE
 
     print_settings()
     use_default = agree_with_question('Использовать настройки по умолчанию (Y, n)? ')
@@ -178,6 +185,10 @@ def configure():
             elif num_prm_to_change == '5':
                 new_prm = input('Введите новый путь директории с изображениями для анализа (путь относительно src/ ): ').strip()
                 RESULT_SAVE_DIR = new_prm
+            elif num_prm_to_change == '6':
+                new_prm = int(input('Введите новое значение (0, 1 или 2): ').strip())
+                if new_prm in (0, 1, 2):
+                    MODE = new_prm
 
             print()
             print_settings()
