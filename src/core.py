@@ -1,8 +1,10 @@
+import shutil
+from dataclasses import dataclass
+from pathlib import Path
 import subprocess
 import sys
 import json
-import shutil
-from pathlib import Path
+import copy
 
 
 IMG_EXTS = {".jpg", ".jpeg", ".png"}
@@ -13,95 +15,7 @@ WHEN_ERRORS_IN_CLASSCUTTER_IGNORE_DIR = True
 DIR_WITH_IMAGES_FOR_ANALYZE = 'images'
 RESULT_SAVE_DIR = ''
 MODE = 0    # 0 - tesseract;  1 - easyocr;  2 - tesseract + easyocr
-DELETE_CACHE_AFTER_COMPLETION = True
-
-
-def send(proc: subprocess.Popen, obj: dict):
-    proc.stdin.write(json.dumps(obj, ensure_ascii=False, default=str) + "\n")
-    proc.stdin.flush()
-
-
-def read_event(proc: subprocess.Popen):
-    while True:
-        line = proc.stdout.readline()
-        if line == "":
-            raise RuntimeError("worker stdout closed")
-        line = line.strip()
-        if not line:
-            continue
-        try:
-            return json.loads(line)
-        except json.JSONDecodeError:
-            print("[bad json]", line)
-
-
-def init_worker(worker_script):
-    proc = subprocess.Popen(
-        [sys.executable, worker_script],
-        stdin=subprocess.PIPE,
-        stdout=subprocess.PIPE,
-        stderr=subprocess.STDOUT,
-        text=True,
-        bufsize=1,
-    )
-
-    evt = read_event(proc)
-    print("EVENT:", evt)
-    if not (evt.get("type") == "started" and evt.get("ok") is True):
-        raise RuntimeError(f"worker didn't start properly: {evt}")
-
-    return proc
-
-
-def cache_make_root_dir(cache_dir):
-    cache_dir = Path(cache_dir)
-    cache_dir.mkdir(parents=True, exist_ok=True)
-    return cache_dir
-
-
-def cache_make_image_dir(cache_dir, img_name):
-    cache_img_dir = cache_dir / img_name
-    cache_img_dir.mkdir(parents=True, exist_ok=True)
-    return cache_img_dir
-
-
-def list_images(input_dir):
-    p = Path(input_dir)
-    if not p.is_dir():
-        raise FileNotFoundError(f"input_dir not found or not a directory: {input_dir}")
-
-    files = [f for f in p.iterdir() if f.is_file() and f.suffix.lower() in IMG_EXTS]
-    return files
-
-
-def list_cache_dirs(cache_root):
-    dirs = [p for p in cache_root.iterdir() if p.is_dir()]
-    return dirs
-
-
-def handle_error_whiteboard(img_path, img_cache_dir):
-    if WHEN_ERRORS_IN_WHITEBOARD_DELETE_DIR:
-        try:
-            shutil.rmtree(img_cache_dir)
-        except Exception as e:
-            print(f"[warn] failed to delete cache dir {img_cache_dir}: {e}")
-    else:
-        dst = img_cache_dir / f"FAILED_{Path(img_path).name}"
-        try:
-            shutil.copy2(img_path, dst)
-        except Exception as e:
-            print(f"[warn] failed to save failed input {img_path} -> {dst}: {e}")
-
-
-def handle_error_classcutter(prev_stage_img_path, class_cutter_dir):
-    if WHEN_ERRORS_IN_CLASSCUTTER_IGNORE_DIR:
-        return
-    else:
-        dst = class_cutter_dir / f"FAILED_{Path(prev_stage_img_path).name}"
-        try:
-            shutil.copy2(prev_stage_img_path, dst)
-        except Exception as e:
-            print(f"[warn] failed to save failed input {prev_stage_img_path} -> {dst}: {e}")
+DELETE_CACHE_AFTER_COMPLETION = False
 
 
 def print_settings(left_part_width=48):
@@ -198,177 +112,167 @@ def configure():
                 break
 
 
-def main():
-    dir_with_images = Path(DIR_WITH_IMAGES_FOR_ANALYZE)
-    result_save_dir = Path(RESULT_SAVE_DIR)
+@dataclass
+class Cache:
+    root: Path
+    img_exts: set
 
-    id = 1
-    proc = init_worker("whiteboard_worker.py")
-
-    cache_root = cache_make_root_dir('cache')
-
-    queue = list_images(dir_with_images)
-    for img_path in queue:
-        cache_img_dir = cache_make_image_dir(cache_root, img_path.stem)
-        out_img = cache_img_dir / f'whiteboard_{img_path.name}'
-        payload = {
-            "image_path": img_path,
-            "out_path": out_img,
-            "target_class": TARGET_CLASS,
-            "target_strategy": TARGET_STRATEGY
-        }
-        send(proc, {"id": id, "op": "do", "payload": payload})
-
-        while True:
-            evt = read_event(proc)
-            print("EVENT:", evt)
-
-            if evt.get("type") != "result":
-                continue
-            if evt.get("id") != id:
-                continue
-
-            if evt.get("ok") is True:
-                break
-
-            handle_error_whiteboard(img_path, cache_img_dir)
-            break
-
-        id += 1
-
-    send(proc, {"id": id, "op": "ext"})
-    id += 1
-    evt = read_event(proc)
-    print("EVENT:", evt)
-
-    rc = proc.wait(timeout=10)
-    print(f"worker exit code: {rc}\n")
+    def __init__(self, root="cache", img_exts=None):
+        self.root = Path(root)
+        self.img_exts = img_exts
 
 
-    # Второй воркер
-    proc2 = init_worker("class_cutter_worker.py")
+    def ensure_root(self):
+        self.root.mkdir(parents=True, exist_ok=True)
+        return self.root
 
-    cache_dirs_queue = list_cache_dirs(cache_root)
+    def clear_root(self):
+        if self.root.exists():
+            shutil.rmtree(self.root)
+        self.root.mkdir(parents=True, exist_ok=True)
+        return self.root
 
-    for cache_dir in cache_dirs_queue:
-        cache_dir_in_img_dir = cache_make_image_dir(cache_dir, 'class_cutter')
-        img_path = list_images(cache_dir)[0]
-        payload = {
-            "image_path": img_path,
-            "out_dir": cache_dir_in_img_dir,
-        }
-        send(proc2, {"id": id, "op": "do", "payload": payload})
+    def make_dir(self, parent, name):
+        base = self.root if parent is None else Path(parent)
+        d = base / name
+        d.mkdir(parents=True, exist_ok=True)
+        return d
 
-        while True:
-            evt = read_event(proc2)
-            print("EVENT:", evt)
+    def list_dirs(self, dir_path=None):
+        p = self.root if dir_path is None else Path(dir_path)
+        if not p.is_dir():
+            raise FileNotFoundError(f"directory not found: {p}")
+        return sorted([x for x in p.iterdir() if x.is_dir()])
 
-            if evt.get("type") != "result":
-                continue
-            if evt.get("id") != id:
-                continue
-
-            if evt.get("ok") is True:
-                break
-
-            handle_error_classcutter(img_path, cache_dir_in_img_dir)
-            break
-
-        id += 1
-
-    send(proc2, {"id": id, "op": "ext"})
-    id += 1
-    evt = read_event(proc2)
-    print("EVENT:", evt)
-
-    rc = proc2.wait(timeout=10)
-    print(f"worker exit code: {rc}\n")
+    def list_images(self, dir_path):
+        p = Path(dir_path)
+        if not p.is_dir():
+            raise FileNotFoundError(f"directory not found: {p}")
+        files = [x for x in p.iterdir() if x.is_file() and x.suffix.lower() in self.img_exts]
+        return sorted(files)
 
 
-    # Третий воркер
-    proc3 = init_worker("baseOCR2_worker.py")
+class WorkerProcess:
+    def __init__(self, worker_script):
+        self.worker_script = worker_script
+        self.proc = None
 
-    result_path = result_save_dir / 'result.txt'
-    result_file = result_path.open('w', encoding='utf-8')
-
-    cache_dirs_queue = list_cache_dirs(cache_root)
-
-    for cache_dir in cache_dirs_queue:
-        class_cutter_dir = cache_dir / 'class_cutter'
-        imgs = sorted(
-            list_images(class_cutter_dir),
-            key=lambda x: x if 'FAILED' in str(x.stem) else int(str(x.stem).split("_")[0])
+    def start(self):
+        self.proc = subprocess.Popen(
+            [sys.executable, self.worker_script],
+            stdin=subprocess.PIPE,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.STDOUT,
+            text=True,
+            bufsize=1,
         )
+        evt = self.read_event()
+        print("EVENT:", evt)
+        if not (evt.get("type") == "started" and evt.get("ok") is True):
+            raise RuntimeError(f"worker didn't start properly: {evt}")
+        return evt
 
-        result_file.write('=' * 100 + '\n')
-        result_file.write(cache_dir.name + '\n\n')
+    def stop(self, req_id):
+        self.send({"id": req_id, "op": "ext"})
+        evt = self.read_event()
+        print("EVENT:", evt)
+        rc = self.proc.wait(timeout=10)
+        print(f"worker exit code: {rc}\n")
+        self.proc = None
+        return evt, rc
 
-        t_buf = []
-        e_buf = []
-        for img_path in imgs:
-            if str(img_path.stem).split("_")[1] in ('0', '1', 'FAILED'):
-                payload = {
-                    "image_path": img_path,
-                    "mode": MODE
-                }
-                send(proc3, {"id": id, "op": "do", "payload": payload})
+    def send(self, obj):
+        self.proc.stdin.write(json.dumps(obj, ensure_ascii=False, default=str) + "\n")
+        self.proc.stdin.flush()
 
-                while True:
-                    evt = read_event(proc3)
+    def read_event(self):
+        while True:
+            line = self.proc.stdout.readline()
+            if line == "":
+                raise RuntimeError("worker stdout closed")
+            line = line.strip()
+            if not line:
+                continue
+            try:
+                return json.loads(line)
+            except json.JSONDecodeError:
+                print("[bad json]", line)
 
-                    if evt.get("type") != "result":
-                        continue
-                    if evt.get("id") != id:
-                        continue
+    def wait_result(self, req_id):
+        while True:
+            evt = self.read_event()
+            print("EVENT:", evt)
 
-                    if evt.get("ok") is True:
-                        worker_payload = evt.get("payload")
-                        t_text = worker_payload.get("tesseract_text")
-                        e_text = worker_payload.get("easyocr_text")
+            if evt.get("type") != "result":
+                continue
+            if evt.get("id") != req_id:
+                continue
+            return evt
 
-                        if t_text:
-                            t_buf.append(t_text)
-                            evt['payload']['tesseract_text'] = t_text.replace('\n', '')[:30]
-                        if e_text:
-                            e_buf.append(e_text)
-                            evt['payload']['easyocr_text'] = e_text.replace('\n', '')[:30]
+    def request(self, req_id, op, payload):
+        self.send({"id": req_id, "op": op, "payload": payload})
+        return self.wait_result(req_id)
 
-                        print("EVENT:", evt)
-                        break
-
-                    break
-
-                id += 1
-
-        if MODE == 2:
-            result_file.write("{{tesseract}}\n\n")
-            result_file.write("\n\n".join(t_buf).strip() + "\n\n")
-
-            result_file.write("-" * 100 + "\n\n")
-
-            result_file.write("{{easyocr}}\n\n")
-            result_file.write("\n\n".join(e_buf).strip() + "\n\n")
-        elif MODE == 0:
-            result_file.write("\n\n".join(t_buf).strip() + "\n\n")
-        elif MODE == 1:
-            result_file.write("\n\n".join(e_buf).strip() + "\n\n")
-
-    result_file.write('=' * 100 + '\n')
-    result_file.flush()
-    result_file.close()
-
-    send(proc3, {"id": id, "op": "ext"})
-    id += 1
-    evt = read_event(proc3)
-    print("EVENT:", evt)
-
-    rc = proc3.wait(timeout=10)
-    print(f"worker exit code: {rc}\n")
+    def print_event(self, evt, truncate_payload_keys=None, max_len=30):
+        e = copy.deepcopy(evt)
+        if truncate_payload_keys and isinstance(e.get("payload"), dict):
+            for k in truncate_payload_keys:
+                v = e["payload"].get(k)
+                if isinstance(v, str) and len(v) > max_len:
+                    e["payload"][k] = v.replace("\n", " ")[:max_len] + "…"
+        print("EVENT:", e)
 
 
-    if DELETE_CACHE_AFTER_COMPLETION:
-        shutil.rmtree(cache_root)
-        print(f'Deleted cache at: {cache_root}')
+def handle_error_whiteboard(img_path, img_cache_dir):
+    if WHEN_ERRORS_IN_WHITEBOARD_DELETE_DIR:
+        try:
+            shutil.rmtree(img_cache_dir)
+        except Exception as e:
+            print(f"[warn] failed to delete cache dir {img_cache_dir}: {e}")
+    else:
+        dst = img_cache_dir / f"FAILED_{Path(img_path).name}"
+        try:
+            shutil.copy2(img_path, dst)
+        except Exception as e:
+            print(f"[warn] failed to save failed input {img_path} -> {dst}: {e}")
+
+
+
+
+def main():
+    cache = Cache("cache", IMG_EXTS)
+    cache.clear_root()
+
+    dir_with_images = Path(DIR_WITH_IMAGES_FOR_ANALYZE)
+
+    queue = cache.list_images(dir_with_images)
+
+    worker1 = WorkerProcess('whiteboard_worker.py')
+    worker1.start()
+
+    req_id = 1
+    for img_path in queue:
+        img_dir = cache.make_dir(None, img_path.stem)
+
+        out_img_name = img_dir / f'whiteboard_{img_path.name}'
+        payload = {
+            'image_path': str(img_path),
+            'out_path': str(out_img_name),
+            'target_class': TARGET_CLASS,
+            'target_strategy': TARGET_STRATEGY,
+        }
+        evt = worker1.request(req_id, 'do', payload)
+
+        if evt.get("ok"):
+            pass
+        else:
+            handle_error_whiteboard(img_path, img_dir)
+
+        req_id += 1
+
+    worker1.stop(req_id)
+
+
 
 
 if __name__ == "__main__":
