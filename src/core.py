@@ -223,6 +223,62 @@ class WorkerProcess:
         print("EVENT:", e)
 
 
+class ResultWriter:
+    def __init__(self, result_dir="", filename="result.txt", mode=2):
+        self.mode = mode
+        self.result_dir = Path(result_dir) if result_dir else Path(".")
+        self.result_dir.mkdir(parents=True, exist_ok=True)
+        self.path = self.result_dir / filename
+        self.f = None
+        self._t_buf = []
+        self._e_buf = []
+
+    def open(self):
+        self.f = self.path.open("w", encoding="utf-8")
+        return self.path
+
+    def close(self):
+        if self.f:
+            self.f.flush()
+            self.f.close()
+            self.f = None
+
+    def start_image_block(self, title):
+        self._t_buf.clear()
+        self._e_buf.clear()
+
+        self.f.write("=" * 100 + "\n")
+        self.f.write(str(title) + "\n\n")
+
+    def add(self, t_text=None, e_text=None):
+        if t_text:
+            self._t_buf.append(t_text)
+        if e_text:
+            self._e_buf.append(e_text)
+
+    def flush_image_block(self):
+        if self.mode == 2:
+            self.f.write("{{tesseract}}\n\n")
+            self.f.write("\n\n".join(self._t_buf).strip() + "\n\n")
+
+            self.f.write("-" * 100 + "\n\n")
+
+            self.f.write("{{easyocr}}\n\n")
+            self.f.write("\n\n".join(self._e_buf).strip() + "\n\n")
+
+        elif self.mode == 0:
+            self.f.write("\n\n".join(self._t_buf).strip() + "\n\n")
+
+        elif self.mode == 1:
+            self.f.write("\n\n".join(self._e_buf).strip() + "\n\n")
+
+        self.f.flush()
+
+    def end(self):
+        self.f.write("=" * 100 + "\n")
+        self.f.flush()
+
+
 def handle_error_whiteboard(img_path, img_cache_dir):
     if WHEN_ERRORS_IN_WHITEBOARD_DELETE_DIR:
         try:
@@ -237,6 +293,235 @@ def handle_error_whiteboard(img_path, img_cache_dir):
             print(f"[warn] failed to save failed input {img_path} -> {dst}: {e}")
 
 
+def handle_error_classcutter(prev_stage_img_path, class_cutter_dir):
+    if WHEN_ERRORS_IN_CLASSCUTTER_IGNORE_DIR:
+        return
+    else:
+        dst = class_cutter_dir / f"FAILED_{Path(prev_stage_img_path).name}"
+        try:
+            shutil.copy2(prev_stage_img_path, dst)
+        except Exception as e:
+            print(f"[warn] failed to save failed input {prev_stage_img_path} -> {dst}: {e}")
+
+
+class Stage:
+    """
+    Шаблон стадии:
+      init -> старт воркера -> start_hook()
+      iter_one(items):
+          - на каждый item создаём директорию в кэше
+          - получаем список изображений (hook get_images_list)
+          - для каждого изображения собираем payload (hook make_payload)
+          - отправляем воркеру, ждём result
+          - решаем ok/не ok (hook is_worker_ok)
+          - on_success / on_error
+      end():
+          - save_result() (hook)
+          - отправляем ext воркеру и ждём bye
+    """
+
+    def __init__(self, name, worker_script, cache):
+        self.name = name
+        self.worker_script = worker_script
+        self.cache = cache
+
+        self.worker = WorkerProcess(worker_script)
+        self.req_id = 1  # счётчик сообщений воркеру
+
+    def run(self, items):
+        print(f"\n--- STAGE: {self.name} ---")
+        self.init()
+        self.iter_one(items)
+        self.end()
+        print(f"--- STAGE DONE: {self.name} ---\n")
+
+    def init(self):
+        self.worker.start()
+        self.start_hook()
+
+    def iter_one(self, items):
+        for item in items:
+            item_dir = self.make_item_dir(item)
+
+            images = self.get_images_list(item, item_dir)
+
+            for img_path in images:
+                payload = self.make_payload(item, item_dir, img_path)
+
+                evt = self.worker.request(self.req_id, "do", payload)
+
+                self.print_event(evt)
+
+                if evt.get("ok"):
+                    self.on_success(item, item_dir, img_path, evt)
+                else:
+                    self.on_error(item, item_dir, img_path, evt)
+
+                self.req_id += 1
+
+    def end(self):
+        self.save_result()
+
+        self.worker.stop(self.req_id)
+        self.req_id += 1
+
+    # -------------------------
+    # Переопределяются в конкретной стадии
+    # -------------------------
+
+    def start_hook(self):
+        pass
+
+    def make_item_dir(self, item):
+        stem = Path(item).stem
+        return self.cache.make_dir(None, stem)
+
+    def get_images_list(self, item, item_dir):
+        return self.cache.list_images(item_dir)
+
+    def make_payload(self, item, item_dir, img_path):
+        return None
+
+    def on_success(self, item, item_dir, img_path, evt):
+        pass
+
+    def on_error(self, item, item_dir, img_path, evt):
+        pass
+
+    def save_result(self):
+        pass
+
+    def print_event(self, evt):
+        print("EVENT:", evt)
+
+
+class WhiteboardStage(Stage):
+    def __init__(self, cache):
+        super().__init__(name="whiteboard", worker_script="whiteboard_worker.py", cache=cache)
+
+    def get_images_list(self, item, item_dir):
+        return [Path(item)]
+
+    def make_payload(self, item, item_dir, img_path):
+        out_img = item_dir / f"whiteboard_{img_path.name}"
+        return {
+            "image_path": str(img_path),
+            "out_path": str(out_img),
+            "target_class": TARGET_CLASS,
+            "target_strategy": TARGET_STRATEGY,
+        }
+
+    def on_error(self, item, item_dir, img_path, evt):
+        handle_error_whiteboard(img_path, item_dir)
+
+
+class ClassCutterStage(Stage):
+    def __init__(self, cache):
+        super().__init__(name="class_cutter", worker_script="class_cutter_worker.py", cache=cache)
+
+    def make_item_dir(self, item):
+        return Path(item)
+
+    def get_images_list(self, item, item_dir):
+        imgs = self.cache.list_images(item_dir)
+        if not imgs:
+            return []
+        return [imgs[0]]
+
+    def make_payload(self, item, item_dir, img_path):
+        out_dir = self.cache.make_dir(item_dir, "class_cutter")
+        return {
+            "image_path": str(img_path),
+            "out_dir": str(out_dir),
+        }
+
+    def on_error(self, item, item_dir, img_path, evt):
+        out_dir = self.cache.make_dir(item_dir, "class_cutter")
+        handle_error_classcutter(img_path, out_dir)
+
+
+class OCRStage(Stage):
+    def __init__(self, cache, writer):
+        super().__init__(name="ocr", worker_script="baseOCR2_worker.py", cache=cache)
+        self.writer = writer
+
+    def start_hook(self):
+        p = self.writer.open()
+        print(f"[ok] result file: {p}")
+
+    def make_item_dir(self, item):
+        return Path(item)
+
+    def get_images_list(self, item, item_dir):
+        class_cutter_dir = item_dir / "class_cutter"
+        if not class_cutter_dir.is_dir():
+            return []
+
+        imgs = self.cache.list_images(class_cutter_dir)
+
+        def _key(p: Path):
+            stem = p.stem
+            if "FAILED" in stem:
+                return (10**9, stem)
+            try:
+                n = int(stem.split("_")[0])
+            except Exception:
+                n = 10**9
+            return (n, stem)
+
+        imgs = sorted(imgs, key=_key)
+
+        out = []
+        for p in imgs:
+            parts = p.stem.split("_")
+            if len(parts) >= 2 and parts[1] in ("0", "1", "FAILED"):
+                out.append(p)
+        return out
+
+    def make_payload(self, item, item_dir, img_path):
+        return {
+            "image_path": str(img_path),
+            "mode": MODE,
+        }
+
+    def iter_one(self, items):
+        for item in items:
+            item_dir = self.make_item_dir(item)
+            images = self.get_images_list(item, item_dir)
+
+            self.writer.start_image_block(item_dir.name)
+
+            for img_path in images:
+                payload = self.make_payload(item, item_dir, img_path)
+                evt = self.worker.request(self.req_id, "do", payload)
+
+                self.worker.print_event(
+                    evt,
+                    truncate_payload_keys=("tesseract_text", "easyocr_text"),
+                    max_len=30,
+                )
+
+                if evt.get("ok"):
+                    self.on_success(item, item_dir, img_path, evt)
+                else:
+                    self.on_error(item, item_dir, img_path, evt)
+
+                self.req_id += 1
+
+            self.writer.flush_image_block()
+
+        self.writer.end()
+
+    def on_success(self, item, item_dir, img_path, evt):
+        payload = evt.get("payload") or {}
+        self.writer.add(
+            t_text=payload.get("tesseract_text"),
+            e_text=payload.get("easyocr_text"),
+        )
+
+    def save_result(self):
+        self.writer.close()
+
 
 
 def main():
@@ -244,34 +529,22 @@ def main():
     cache.clear_root()
 
     dir_with_images = Path(DIR_WITH_IMAGES_FOR_ANALYZE)
+    items_for_stage1 = cache.list_images(dir_with_images)
+    stage1 = WhiteboardStage(cache)
+    stage1.run(items_for_stage1)
 
-    queue = cache.list_images(dir_with_images)
+    items_for_stage2 = cache.list_dirs()
+    stage2 = ClassCutterStage(cache)
+    stage2.run(items_for_stage2)
 
-    worker1 = WorkerProcess('whiteboard_worker.py')
-    worker1.start()
+    writer = ResultWriter(result_dir=RESULT_SAVE_DIR, filename="result.txt", mode=MODE)
+    items_for_stage3 = cache.list_dirs()
+    stage3 = OCRStage(cache, writer)
+    stage3.run(items_for_stage3)
 
-    req_id = 1
-    for img_path in queue:
-        img_dir = cache.make_dir(None, img_path.stem)
-
-        out_img_name = img_dir / f'whiteboard_{img_path.name}'
-        payload = {
-            'image_path': str(img_path),
-            'out_path': str(out_img_name),
-            'target_class': TARGET_CLASS,
-            'target_strategy': TARGET_STRATEGY,
-        }
-        evt = worker1.request(req_id, 'do', payload)
-
-        if evt.get("ok"):
-            pass
-        else:
-            handle_error_whiteboard(img_path, img_dir)
-
-        req_id += 1
-
-    worker1.stop(req_id)
-
+    if DELETE_CACHE_AFTER_COMPLETION:
+        cache.clear_root()
+        print(f"Deleted cache at: {cache.root}")
 
 
 
